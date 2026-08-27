@@ -130,6 +130,9 @@ def candidate_is_clean(dev):
     """
     try:
         diff = dev.rpc.get_config(options={'compare': 'rollback', 'rollback': '0'})
+        # PyEZ returns True (not an XML element) when there's no diff at all.
+        if isinstance(diff, bool):
+            return diff
         text = diff.text if diff is not None else None
         return not (text and text.strip())
     except Exception as err:
@@ -268,7 +271,10 @@ def main():
 
             try:
                 log("info", "Running commit check...")
-                cu.commit_check(timeout=180)
+                # The on-box PyEZ build doesn't accept timeout= here (older
+                # signature than commit()'s); dev.timeout still bounds the
+                # underlying RPC.
+                cu.commit_check()
                 log("info", "Commit check passed.")
             except CommitError as err:
                 log("error", f"Commit check failed, aborting (no changes committed): {err}")
