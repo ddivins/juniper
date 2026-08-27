@@ -159,11 +159,16 @@ def parse_args():
 def main():
     args = parse_args()
 
+    # Junos_Context['script-type'] is 'op' for a manual `run op` invocation
+    # and 'event' when eventd fired this as an event-script -- confirmed
+    # present and identically named on both 22.4R1.10 and 23.4R2.13.
+    # There's no field anywhere in Junos_Context carrying the specific
+    # triggering event's name (no 'event-context'/'trigger-event' key was
+    # populated on either version tested), so "event" is as specific as
+    # this can get.
     trigger = "manual"
-    if isinstance(Junos_Context, dict):
-        event_context = Junos_Context.get('event-context')
-        if event_context:
-            trigger = event_context.get('event-name', 'event')
+    if isinstance(Junos_Context, dict) and Junos_Context.get('script-type') == 'event':
+        trigger = "event"
 
     log("notice", f"Starting (trigger={trigger}, dry_run={args.dry_run}, enforce_ruckus_oui={ENFORCE_RUCKUS_OUI})")
 
