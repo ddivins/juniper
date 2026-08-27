@@ -174,6 +174,16 @@ your terminal -- check with:
 show log messages | match dhcp_reservations
 ```
 
+All of the script's status lines (start, bindings found, matches,
+what's new, commit result) log at `notice` severity specifically so
+they show up regardless of how strict `system syslog file messages`
+is configured -- some boxes use a permissive `any any`, others (seen in
+testing) restrict `messages` to `any notice`, which silently drops
+anything logged at `info` or below. Only the per-binding raw dump
+(`IP=... MAC=... POOL=... OUI=...`) and the "already exists, skipping"
+lines stay at `info`, since they're high-volume and non-essential --
+they just won't show up in `messages` on a box with a `notice` floor.
+
 ## Config mode
 
 The script opens the candidate configuration in `private` mode (see the

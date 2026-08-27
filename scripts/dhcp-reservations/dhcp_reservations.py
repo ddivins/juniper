@@ -165,7 +165,7 @@ def main():
         if event_context:
             trigger = event_context.get('event-name', 'event')
 
-    log("info", f"Starting (trigger={trigger}, dry_run={args.dry_run}, enforce_ruckus_oui={ENFORCE_RUCKUS_OUI})")
+    log("notice", f"Starting (trigger={trigger}, dry_run={args.dry_run}, enforce_ruckus_oui={ENFORCE_RUCKUS_OUI})")
 
     # gather_facts=False speeds up on-box connection since the
     # platform/version is already known locally.
@@ -185,10 +185,10 @@ def main():
             return
 
         bindings = dhcp_info.xpath('.//dhcp-binding')
-        log("info", f"Bindings found: {len(bindings)}")
+        log("notice", f"Bindings found: {len(bindings)}")
 
         existing_macs = get_existing_reservations(dev)
-        log("info", f"Existing reservations found: {len(existing_macs)}")
+        log("notice", f"Existing reservations found: {len(existing_macs)}")
 
         set_commands = []
         matched_count = 0
@@ -221,20 +221,20 @@ def main():
                 f"host {hostname} hardware-address {mac} ip-address {ip}"
             )
             set_commands.append(cmd)
-            log("info", f"[NEW] {cmd}")
+            log("notice", f"[NEW] {cmd}")
 
-        log("info", f"Devices matched: {matched_count}")
-        log("info", f"New reservations to create: {len(set_commands)}")
+        log("notice", f"Devices matched: {matched_count}")
+        log("notice", f"New reservations to create: {len(set_commands)}")
 
         if not set_commands:
-            log("info", "No new reservations needed.")
+            log("notice", "No new reservations needed.")
             return
 
         if args.dry_run:
-            log("info", "[DRY-RUN] The following commands would be applied:")
+            log("notice", "[DRY-RUN] The following commands would be applied:")
             for cmd in set_commands:
-                log("info", f"  {cmd}")
-            log("info", "[DRY-RUN] No configuration was loaded or committed.")
+                log("notice", f"  {cmd}")
+            log("notice", "[DRY-RUN] No configuration was loaded or committed.")
             return
 
         if CONFIG_MODE == "private" and not candidate_is_clean(dev):
@@ -268,12 +268,12 @@ def main():
                 return
 
             try:
-                log("info", "Running commit check...")
+                log("notice", "Running commit check...")
                 # The on-box PyEZ build doesn't accept timeout= here (older
                 # signature than commit()'s); dev.timeout still bounds the
                 # underlying RPC.
                 cu.commit_check()
-                log("info", "Commit check passed.")
+                log("notice", "Commit check passed.")
             except CommitError as err:
                 log("error", f"Commit check failed, aborting (no changes committed): {err}")
                 log("error", f"Full error detail: {err!r}")
@@ -289,7 +289,7 @@ def main():
                     comment=f"Automated DHCP reservations (trigger={trigger})",
                     timeout=360
                 )
-                log("info", "Configuration committed successfully.")
+                log("notice", "Configuration committed successfully.")
             except CommitError as err:
                 log("error", f"Commit failed: {err}")
                 log("error", f"Full error detail: {err!r}")
