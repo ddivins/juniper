@@ -184,3 +184,90 @@ isolates this script's edits without blocking other users, at the cost
 of requiring the shared candidate to be clean; the script checks for
 that up front (`candidate_is_clean()`) and logs a specific reason rather
 than surfacing an opaque RPC error if it isn't.
+
+## Troubleshooting
+
+Start with syslog -- almost everything the script does is logged there,
+tagged `dhcp_reservations`:
+
+```
+show log messages | match dhcp_reservations
+```
+
+**`Bindings found: 0`, or the script never seems to run at all.**
+DHCP isn't actually handing out leases, or nothing's reaching the
+script. Check `show dhcp server binding` directly -- if that's empty
+too, this isn't a script problem, it's the `dhcp-local-server group`
+interface binding or the zone's `dhcp` system-service (see "Required
+configuration" above). If bindings exist but the script never logs
+anything, confirm the event policy actually fired: `show log messages
+| match EVENTD_ESCRIPT_EXECUTION`.
+
+**`Could not open local NETCONF session: ... user "nobody" does not
+have access privileges`.** Missing `python-script-user` on the
+`event-script file` stanza -- see "Why python-script-user is required"
+above. This is the single most common failure mode; check it first.
+
+**Check `<login-user>`'s permissions.** If the script gets past opening
+a connection but fails loading or committing the config, the identity
+it's running as (whatever `python-script-user` points at) likely
+doesn't have enough class permission. Check what it's actually
+configured with:
+
+```
+show configuration system login user <login-user> | display set
+show configuration system login class <class-name> | display set
+```
+
+It needs `configure` (to enter configuration mode at all) plus enough
+scope over `[edit access]` to create hosts under
+`address-assignment` -- `access` and `access-control` cover that (see
+the scoped-account example above), or a broader class like
+`super-user` obviously already includes it. The quickest direct test
+is to log in as that user yourself and try the same thing by hand:
+
+```
+ssh <login-user>@device
+run op dhcp_reservations.py dry-run
+configure
+set access address-assignment pool <POOL> family inet host test-perm hardware-address 00:00:00:00:00:01 ip-address <unused-ip-in-pool>
+commit check
+rollback 0
+exit
+```
+
+If `commit check` fails there with a permission error, that's the
+class, not the script.
+
+**Commit fails with something like `configuration check-out fail`, or
+`private` mode refuses to open.** Usually means the shared candidate
+configuration already has uncommitted changes sitting in it from
+someone else's session -- `private` mode won't open on top of a dirty
+shared candidate (this is exactly what `candidate_is_clean()` checks
+for and logs a clear reason for; if you're seeing the raw RPC error
+instead, something changed the config between that check and the
+`Config()` open). Look for a stale session:
+
+```
+show system users
+```
+
+If there's an idle session that's been sitting in `configure` mode,
+either have that user finish up (`commit` or `rollback 0; exit`), or
+clear it yourself: `request system logout terminal <tty>` (the `TTY`
+column from `show system users`, e.g. `pts/0`).
+
+**`CSCRIPT_SECURITY_WARNING: unsigned python script ... without
+checksum is executed`.** Expected, shows up on every single run in
+syslog, not an error -- Junos supports signed/checksummed scripts for
+stricter environments, but nothing here requires it.
+
+**Ruckus devices aren't getting reservations even though they're
+bound.** Check the binding's actual OUI against `RUCKUS_OUIS` in
+[`dhcp_reservations.py`](dhcp_reservations.py) -- the syslog line
+`IP=... MAC=... POOL=... OUI=...` is logged for *every* binding
+regardless of match, so you can see exactly what OUI the script saw
+and compare it to the list. A device whose vendor changed MACs or
+whose OUI just isn't in the (necessarily incomplete) list will be
+skipped silently -- that's `ENFORCE_RUCKUS_OUI` working as intended,
+not a bug, but worth confirming that's actually what's happening.
