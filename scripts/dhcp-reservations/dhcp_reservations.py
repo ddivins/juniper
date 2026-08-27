@@ -20,11 +20,9 @@ Manual test, loads and commits:
 Automatic (once wired to event-options -- see README):
     fires on its own; nothing to type.
 
-TROUBLESHOOTING: Ruckus-OUI matching is temporarily disabled
-(ENFORCE_RUCKUS_OUI = False below), so every DHCP binding is treated as a
-reservation candidate regardless of vendor. This is deliberate while we
-confirm the reservation / commit-check / commit mechanics work end-to-end
-on a real box. Flip it back to True once that's confirmed.
+Ruckus-OUI matching is enabled (ENFORCE_RUCKUS_OUI = True below): only
+DHCP bindings whose MAC OUI is in RUCKUS_OUIS are treated as reservation
+candidates.
 """
 
 import argparse
@@ -45,11 +43,11 @@ from jnpr.junos import Device
 from jnpr.junos.utils.config import Config
 from jnpr.junos.exception import ConnectError, CommitError, ConfigLoadError, RpcError, LockError
 
-# --- Troubleshooting switches --------------------------------------------
+# --- Switches --------------------------------------------------------------
 
-# See module docstring. Set True once reservation creation is confirmed
-# working and you want to go back to only matching Ruckus APs.
-ENFORCE_RUCKUS_OUI = False
+# Only treat DHCP bindings whose MAC OUI is in RUCKUS_OUIS as reservation
+# candidates. Set False to reserve every binding regardless of vendor.
+ENFORCE_RUCKUS_OUI = True
 
 # 'private' gives this script its own isolated candidate instead of
 # locking every user out of configuration mode on every single run,
