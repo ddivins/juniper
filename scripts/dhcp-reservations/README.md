@@ -16,77 +16,107 @@ list in [`dhcp_reservations.py`](dhcp_reservations.py)
 (`ENFORCE_RUCKUS_OUI = True`). Set that to `False` to reserve every DHCP
 binding regardless of vendor.
 
-## Prerequisites (existing box config)
+## Copying the file
 
-This script only *writes* reservations into an address-assignment pool
-that already exists and is actively serving DHCP -- it doesn't create
-DHCP service from scratch. Before installing the script, the target
-VLAN/interface needs:
-
-```
-set access address-assignment pool <POOL> family inet network <subnet>/<mask>
-set access address-assignment pool <POOL> family inet range <RANGE-NAME> low <first-ip>
-set access address-assignment pool <POOL> family inet range <RANGE-NAME> high <last-ip>
-set access address-assignment pool <POOL> family inet dhcp-attributes router <gateway-ip>
-
-set system services dhcp-local-server group <GROUP> interface <iface>.<unit>
-
-set security zones security-zone <ZONE> host-inbound-traffic system-services dhcp
-set security zones security-zone <ZONE> interfaces <iface>.<unit>
-```
-
-If the `dhcp-local-server group` interface binding is wrong (pointing at
-an interface that doesn't exist or isn't the one clients are actually
-on) or the zone doesn't permit the `dhcp` system-service inbound, the
-server silently hands out zero leases -- `show dhcp server binding`
-comes back empty and there's nothing for this script to act on. Check
-that first if it looks like nothing is happening.
-
-The script also needs Python enabled for on-box scripting:
-
-```
-set system scripts language python3
-```
-
-## Install
-
-Copy the script to the box (as both an op script, for manual testing,
-and an event script, for unattended periodic runs), then register it:
+The script is registered as both an op script (manual testing) and an
+event script (unattended runs) -- copy the same file to both
+locations:
 
 ```
 scp dhcp_reservations.py user@device:/var/db/scripts/event/dhcp_reservations.py
 scp dhcp_reservations.py user@device:/var/db/scripts/op/dhcp_reservations.py
 ```
 
+No `chmod` needed. Junos invokes op/event scripts through its own
+script engine (keyed off `system scripts language python3` and the
+`file` registration in config), not via a direct OS `execve()` that
+would care about the executable bit -- the default permissions `scp`
+leaves the file with (`-rw-r--r--`) are enough, confirmed by every run
+in testing.
+
+## Required configuration (one block)
+
+Everything below needs to be in place for the script to do anything
+useful. Load all of this in one pass:
+
 ```
+# 1. Enable Python for on-box scripts.
+set system scripts language python3
+
+# 2. The DHCP service this script writes reservations into. Must
+#    already exist and actually be handing out leases -- this script
+#    only adds static hosts to a pool, it doesn't create DHCP service.
+#    Substitute your own pool/range/subnet/interface/zone names.
+set access address-assignment pool <POOL> family inet network <subnet>/<mask>
+set access address-assignment pool <POOL> family inet range <RANGE-NAME> low <first-ip>
+set access address-assignment pool <POOL> family inet range <RANGE-NAME> high <last-ip>
+set access address-assignment pool <POOL> family inet dhcp-attributes router <gateway-ip>
+set system services dhcp-local-server group <GROUP> interface <iface>.<unit>
+set security zones security-zone <ZONE> host-inbound-traffic system-services dhcp
+set security zones security-zone <ZONE> interfaces <iface>.<unit>
+
+# 3. Register the script as both an op script (manual testing) and an
+#    event script (unattended runs). <login-user> is who the script
+#    actually runs as -- see "Why python-script-user is required".
 set system scripts op file dhcp_reservations.py
-set event-options event-script file dhcp_reservations.py python-script-user <a-real-login-user>
+set event-options event-script file dhcp_reservations.py python-script-user <login-user>
+
+# 4. Trigger it on a timer -- this is a reconciliation job, not tied
+#    to a specific syslog message. Adjust time-interval (seconds) to
+#    taste; 300 = every 5 minutes.
+set event-options generate-event DHCP_RESERVE_TIMER time-interval 300
+set event-options policy DHCP_RESERVE_POLICY events DHCP_RESERVE_TIMER
+set event-options policy DHCP_RESERVE_POLICY then event-script dhcp_reservations.py
+
 commit
 ```
 
-`python-script-user` is the whole trick, and it's mandatory -- see "Why
-python-script-user is required" below. `<a-real-login-user>` needs
-enough class permission to enter configuration mode and edit `[edit
-access]` -- reusing an existing admin account (as tested) is simplest;
-a scoped-down service account works too if you'd rather not grant a
-script your admin login's full privilege, it just needs its own
-class with at least `access`, `access-control`, and `configure`
-permissions.
-
-## Wiring up automatic execution
-
-The script is a reconciliation job, not something tied to a specific
-syslog message -- it just needs to run periodically. Use a generated
-timer event:
+Verified working example, straight from a tested box (pool/interface
+names are this lab's, `python-script-user jcluser` reuses the existing
+admin login -- see the permission-scoping note below if you'd rather
+not do that):
 
 ```
+set system scripts language python3
+set access address-assignment pool DHCP-POOL-01 family inet network 10.10.1.0/24
+set access address-assignment pool DHCP-POOL-01 family inet range r1 low 10.10.1.100
+set access address-assignment pool DHCP-POOL-01 family inet range r1 high 10.10.1.254
+set access address-assignment pool DHCP-POOL-01 family inet dhcp-attributes router 10.10.1.1
+set system services dhcp-local-server group DHCP-POOL-01 interface ge-0/0/1.0
+set security zones security-zone TRUST host-inbound-traffic system-services dhcp
+set security zones security-zone TRUST interfaces ge-0/0/1.0
+set system scripts op file dhcp_reservations.py
+set event-options event-script file dhcp_reservations.py python-script-user jcluser
 set event-options generate-event DHCP_RESERVE_TIMER time-interval 300
 set event-options policy DHCP_RESERVE_POLICY events DHCP_RESERVE_TIMER
 set event-options policy DHCP_RESERVE_POLICY then event-script dhcp_reservations.py
 commit
 ```
 
-Adjust `time-interval` (seconds) to taste -- 300 = every 5 minutes.
+If the `dhcp-local-server group` interface binding is wrong (pointing
+at an interface that doesn't exist, or isn't the one clients are
+actually on) or the zone doesn't permit the `dhcp` system-service
+inbound, the server silently hands out zero leases -- `show dhcp
+server binding` comes back empty and there's nothing for this script
+to act on. Check that first if it looks like nothing is happening.
+
+`<login-user>` needs enough class permission to enter configuration
+mode and edit `[edit access]`. Reusing an existing admin account (as
+tested, `jcluser` above) is simplest. A scoped-down service account
+works too, if you'd rather not grant a script your admin login's full
+privilege -- give it its own login class with at least `access`,
+`access-control`, and `configure` permissions:
+
+```
+set system login class dhcp-reservations permissions access
+set system login class dhcp-reservations permissions access-control
+set system login class dhcp-reservations permissions configure
+set system login user <login-user> class dhcp-reservations
+```
+
+That last piece (creating the account itself, with a password or SSH
+key) isn't shown here on purpose -- do that step by hand on the box
+rather than scripting/committing credentials.
 
 ## Why `python-script-user` is required
 
