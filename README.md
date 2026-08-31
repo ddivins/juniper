@@ -7,3 +7,6 @@ scripts, commit scripts).
 
 - [`scripts/dhcp-reservations`](scripts/dhcp-reservations/) -- converts
   active DHCP server lease bindings into static DHCP reservations.
+- [`scripts/srx-if-stats`](scripts/srx-if-stats/) -- read-only op script
+  reporting per-interface bandwidth/drops plus flow session and SPU
+  CPU/memory stats.
