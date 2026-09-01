@@ -10,28 +10,18 @@ DEBUG = False
 
 # Used only if the apply-macro isn't configured at all (see README).
 # Deliberately empty: with no macro configured, the script should clear
-# nothing rather than silently fall back to some previously hardcoded set
-# of prefixes.
-DEFAULT_IPV4_PREFIXES = []
+# nothing rather than guess.
+DEFAULT_ENTRIES = []
 
-DEFAULT_IPV6_PREFIXES = []
+# Data-name format: <direction>-<family>-<n>
+ENTRY_NAME_RE = re.compile(r"^(src|dst|both)-(inet6?)-(\d+)$")
 
 def debug_print(msg):
     if DEBUG:
         print(f"DEBUG: {msg}")
 
-def prefix_sort_key(item):
-    name, value = item
-
-    match = re.search(r"-(\d+)$", name)
-    if match:
-        return int(match.group(1))
-
-    return 9999
-
-def parse_apply_macro_prefixes(xml_root, source_name):
-    ipv4 = []
-    ipv6 = []
+def parse_apply_macro_entries(xml_root, source_name):
+    entries = []
 
     macros = xml_root.xpath(
         ".//*[local-name()='apply-macro'][*[local-name()='name' and text()='{}']]".format(MACRO_NAME)
@@ -58,31 +48,36 @@ def parse_apply_macro_prefixes(xml_root, source_name):
             if not value:
                 continue
 
-            if name.startswith("ipv4-"):
-                ipv4.append((name, value))
-            elif name.startswith("ipv6-"):
-                ipv6.append((name, value))
+            match = ENTRY_NAME_RE.match(name)
+            if not match:
+                debug_print(f"{source_name}: skipping {name} -- doesn't match <src|dst|both>-<inet|inet6>-<n>")
+                continue
 
-    ipv4.sort(key=prefix_sort_key)
-    ipv6.sort(key=prefix_sort_key)
+            direction, family, index = match.groups()
+            entries.append((int(index), direction, family, value))
 
-    return [v for _, v in ipv4], [v for _, v in ipv6]
+    entries.sort(key=lambda e: e[0])
 
-def get_prefixes_from_apply_macro(dev):
+    return [
+        {"direction": direction, "family": family, "prefix": prefix}
+        for _, direction, family, prefix in entries
+    ]
+
+def get_entries_from_apply_macro(dev):
     try:
         rsp = dev.rpc.cli(
             command=f"show configuration apply-macro {MACRO_NAME}",
             format="xml"
         )
 
-        ipv4, ipv6 = parse_apply_macro_prefixes(
+        entries = parse_apply_macro_entries(
             rsp,
             "cli show configuration apply-macro"
         )
 
-        if ipv4 or ipv6:
-            debug_print(f"using prefixes from apply-macro: ipv4={ipv4} ipv6={ipv6}")
-            return ipv4, ipv6
+        if entries:
+            debug_print(f"using entries from apply-macro: {entries}")
+            return entries
 
     except Exception as err:
         debug_print(f"cli show configuration apply-macro failed: {err}")
@@ -92,31 +87,31 @@ def get_prefixes_from_apply_macro(dev):
             options={"database": "committed"}
         )
 
-        ipv4, ipv6 = parse_apply_macro_prefixes(
+        entries = parse_apply_macro_entries(
             cfg,
             "get_config committed"
         )
 
-        if ipv4 or ipv6:
-            debug_print(f"using prefixes from committed config: ipv4={ipv4} ipv6={ipv6}")
-            return ipv4, ipv6
+        if entries:
+            debug_print(f"using entries from committed config: {entries}")
+            return entries
 
     except Exception as err:
         debug_print(f"get_config committed failed: {err}")
 
-    debug_print(
-        f"no apply-macro prefixes found; falling back to defaults "
-        f"ipv4={DEFAULT_IPV4_PREFIXES} ipv6={DEFAULT_IPV6_PREFIXES}"
-    )
+    debug_print(f"no apply-macro entries found; falling back to defaults {DEFAULT_ENTRIES}")
 
-    return DEFAULT_IPV4_PREFIXES, DEFAULT_IPV6_PREFIXES
+    return DEFAULT_ENTRIES
 
 def get_mode():
     """
     Default: all
     Optional:
-      inet  = IPv4 only
-      inet6 = IPv6 only
+      inet  = IPv4 entries only
+      inet6 = IPv6 entries only
+
+    Filters by address family only -- direction (src/dst/both) is set per
+    entry via the apply-macro, not by a command-line argument.
     """
 
     args = [a.lower() for a in sys.argv[1:]]
@@ -129,8 +124,32 @@ def get_mode():
 
     return "all"
 
-def clear_prefix(dev, prefix):
-    cmd = f"clear security flow session destination-prefix {prefix}"
+def build_actions(entries, mode):
+    """
+    Expand each macro entry into one or two concrete clear actions --
+    'both' means both a source-prefix and a destination-prefix clear for
+    that same prefix.
+    """
+
+    actions = []
+
+    for entry in entries:
+        if mode != "all" and entry["family"] != mode:
+            continue
+
+        direction = entry["direction"]
+        prefix = entry["prefix"]
+
+        if direction in ("src", "both"):
+            actions.append(("source-prefix", prefix))
+
+        if direction in ("dst", "both"):
+            actions.append(("destination-prefix", prefix))
+
+    return actions
+
+def clear_prefix(dev, kind, prefix):
+    cmd = f"clear security flow session {kind} {prefix}"
 
     try:
         rsp = dev.rpc.cli(
@@ -159,26 +178,20 @@ def main():
         print(f"ERROR: Could not connect to local device: {err}")
         return
 
-    ipv4_prefixes, ipv6_prefixes = get_prefixes_from_apply_macro(dev)
-
-    if mode == "inet":
-        prefixes = ipv4_prefixes
-    elif mode == "inet6":
-        prefixes = ipv6_prefixes
-    else:
-        prefixes = ipv4_prefixes + ipv6_prefixes
+    entries = get_entries_from_apply_macro(dev)
+    actions = build_actions(entries, mode)
 
     print(f"Mode: {mode}")
-    print(f"Prefixes to clear: {len(prefixes)}")
+    print(f"Clear actions: {len(actions)}")
     print("-" * 80)
 
-    for prefix in prefixes:
-        ok, msg = clear_prefix(dev, prefix)
+    for kind, prefix in actions:
+        ok, msg = clear_prefix(dev, kind, prefix)
 
         if ok:
-            print(f"OK   destination-prefix {prefix}")
+            print(f"OK   {kind} {prefix}")
         else:
-            print(f"FAIL destination-prefix {prefix} -- {msg}")
+            print(f"FAIL {kind} {prefix} -- {msg}")
 
     try:
         dev.close()
