@@ -10,3 +10,6 @@ scripts, commit scripts).
 - [`scripts/srx-if-stats`](scripts/srx-if-stats/) -- read-only op script
   reporting per-interface bandwidth/drops plus flow session and SPU
   CPU/memory stats.
+- [`scripts/clear-sessions-by-prefix`](scripts/clear-sessions-by-prefix/) --
+  clears active flow sessions for a configurable list of IPv4/IPv6
+  destination prefixes.
