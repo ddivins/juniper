@@ -1,0 +1,15 @@
+# MIB releases you decompress here (see README "Getting the MIBs") -- not
+# committed: Juniper's own copyright notice is in every file, and this repo
+# ships the tooling, not Juniper's redistributable MIB text.
+juniper-mibs-*/
+junos-evo-mibs.*/
+*.zip
+
+# Generated outputs -- regenerate with build_full_catalog.py + build_artifact.py
+# rather than committing a snapshot that goes stale.
+juniper_notifications_full.json
+juniper_trap_catalog.xlsx
+juniper_trap_catalog.html
+
+__pycache__/
+*.pyc
