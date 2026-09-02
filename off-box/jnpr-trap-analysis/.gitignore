@@ -3,7 +3,9 @@
 # ships the tooling, not Juniper's redistributable MIB text.
 juniper-mibs-*/
 junos-evo-mibs.*/
+archives/
 *.zip
+*.tar.gz
 
 # Generated outputs -- regenerate with build_full_catalog.py + build_artifact.py
 # rather than committing a snapshot that goes stale.
