@@ -13,6 +13,10 @@ commit scripts. Each one connects to the box's own local NETCONF session
 - [`clear-sessions-by-prefix`](clear-sessions-by-prefix/) -- clears active
   flow sessions for a configurable list of IPv4/IPv6 destination
   prefixes.
+- [`le-ca-sync`](le-ca-sync/) -- keeps a device's local PKI trust store
+  in sync with whatever Let's Encrypt is actively issuing from, so an
+  `auto-re-enrollment acme` certificate doesn't break the next time
+  Let's Encrypt rotates its intermediate/root hierarchy.
 
 See [`../off-box`](../off-box/) for tooling that runs on a workstation
 instead of on the device.
