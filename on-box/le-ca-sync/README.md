@@ -209,6 +209,53 @@ correctly excluded. If Let's Encrypt ever promotes them to active
 issuance, this script picks them up automatically; no code change
 needed.
 
+## CA certificates are deduplicated by content, not by profile name
+
+Confirmed the hard way while cleaning up a leftover manual profile:
+Junos's PKI store keys a loaded CA certificate by its actual byte
+content, not by the `ca-profile` name it was loaded under. Two
+profiles loaded from byte-identical PEM files share one underlying
+certificate object in `pkid`'s store -- they are not two independent
+copies that happen to look the same.
+
+This surfaced concretely as: a manually-created `LE_ROOT_YR` profile
+and the script-managed `LE_ROOT_YR_BY_X1` profile had both been loaded
+from the same `root-yr-by-x1.pem` file (same content, different
+profile names, created at different times by different people).
+Deleting `LE_ROOT_YR` to clean up the duplicate --
+
+```
+delete security pki trusted-ca-group LE ca-profiles LE_ROOT_YR
+delete security pki ca-profile LE_ROOT_YR
+commit
+```
+
+-- silently deleted `LE_ROOT_YR_BY_X1`'s certificate too.
+`LE_ROOT_YR_BY_X1` was left configured but empty (`show security pki
+ca-certificate detail ca-profile LE_ROOT_YR_BY_X1` returned nothing),
+and `ACME-RA-CERT`'s `Cert-Chain` immediately degraded from the full
+`ISRG Root X1, Root YR, YR1` down to just `YR1` -- no error, no
+warning, just a quietly incomplete chain. Nothing was broken by the
+commit itself (no error, no rollback needed); the certificate object
+was just gone from *every* profile that had referenced it, not only
+the one being deleted.
+
+Fixed by reloading the surviving profile from the same file it always
+used:
+
+```
+request security pki ca-certificate load ca-profile LE_ROOT_YR_BY_X1 filename root-yr-by-x1.pem
+```
+
+**The takeaway:** never delete a `ca-profile` without first checking
+whether any *other* profile was loaded from the same certificate
+content (matching fingerprint, or simply "loaded from the same source
+file" as here) -- deleting one deletes the shared object out from
+under all of them. After any `delete security pki ca-profile ...`,
+verify every profile still sharing that cert's fingerprint or source
+file with `show security pki ca-certificate detail ca-profile
+<name>`, not just the one you intentionally removed.
+
 ## Why `python-script-user` is required
 
 Same root cause as [`../dhcp-reservations`](../dhcp-reservations/):
@@ -334,3 +381,15 @@ prose should verify against the page's real markup once, by hand, not
 just against whatever a summarized/rendered description of the page
 implies its structure to be -- a clean run and an absence of logged
 warnings are not the same thing as "found everything it should have."
+
+**A `ca-profile`'s certificate went empty (or `Cert-Chain` degraded)
+right after deleting a *different*, unrelated-looking `ca-profile`.**
+See "CA certificates are deduplicated by content, not by profile name"
+above -- you (or something else) deleted another profile that was
+loaded from the same certificate content, and Junos's PKI store
+deleted the shared underlying object, not just that one profile's
+reference to it. Fix: reload the surviving profile from its original
+source file (`request security pki ca-certificate load ca-profile
+<name> filename <file>`), and before deleting any `ca-profile` in the
+future, check whether another profile shares its certificate's
+fingerprint or source file first.
