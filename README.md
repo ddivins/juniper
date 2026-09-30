@@ -30,3 +30,6 @@ Organized by where each thing runs:
   searchable catalog of every SNMP trap a Junos or Junos-EVO release can
   send, with varbind values decoded from their MIB definitions and
   release-to-release/OS-to-OS comparison.
+- [`off-box/srx-idp`](off-box/srx-idp/) -- SRX IDP signature delta
+  reports, update-pack download and manifest comparison, and device
+  attack-list export.

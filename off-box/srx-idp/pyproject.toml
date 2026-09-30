@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "srx-idp"
+version = "0.1.0"
+description = "Tools for Juniper SRX IDP signature analysis and reporting"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "junos-eznc>=2.7",
+    "lxml>=5",
+    "openpyxl>=3.1",
+    "requests>=2.31",
+]
+
+[project.scripts]
+srx-idp = "srx_idp.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/srx_idp"]
+
