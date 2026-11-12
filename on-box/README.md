@@ -17,6 +17,10 @@ commit scripts. Each one connects to the box's own local NETCONF session
   in sync with whatever Let's Encrypt is actively issuing from, so an
   `auto-re-enrollment acme` certificate doesn't break the next time
   Let's Encrypt rotates its intermediate/root hierarchy.
+- [`ber-remediation`](ber-remediation/) -- event scripts that detect a
+  sustained high bit-error rate on a link and remove it from its
+  aggregated-Ethernet bundle when the backup path and remaining members
+  allow it.
 
 See [`../off-box`](../off-box/) for tooling that runs on a workstation
 instead of on the device.

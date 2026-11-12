@@ -24,6 +24,11 @@ Organized by where each thing runs:
   clears active flow sessions for a configurable list of IPv4/IPv6
   destination prefixes.
 
+- [`on-box/ber-remediation`](on-box/ber-remediation/) -- event scripts
+  that detect a sustained high bit-error rate on a link and remove it from
+  its aggregated-Ethernet bundle when the backup path and remaining
+  members allow it.
+
 ## off-box
 
 - [`off-box/jnpr-trap-analysis`](off-box/jnpr-trap-analysis/) -- builds a
