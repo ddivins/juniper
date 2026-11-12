@@ -1,0 +1,21 @@
+set system scripts language python3
+set event-options generate-event BER_POLL time-interval 60
+set event-options policy BER_MONITOR events BER_POLL
+set event-options policy BER_MONITOR then event-script ber_monitor.py arguments interfaces et-0/0/5,et-0/0/6
+set event-options policy BER_MONITOR then event-script ber_monitor.py arguments threshold 1e-7
+set event-options policy BER_MONITOR then event-script ber_monitor.py arguments sustain 3
+set event-options policy BER_MONITOR then event-script ber_monitor.py arguments interval 60
+set event-options policy BER_MONITOR then event-script ber_monitor.py user-name jcluser
+set event-options policy BER_REMEDIATE events SYSTEM
+set event-options policy BER_REMEDIATE attributes-match SYSTEM.message matches "HIGH BER.*"
+set event-options policy BER_REMEDIATE then event-script ber_remediate.py arguments message "{$$.message}"
+set event-options policy BER_REMEDIATE then event-script ber_remediate.py arguments backup-unit ae10.0
+set event-options policy BER_REMEDIATE then event-script ber_remediate.py arguments backup-min-nbrs 1
+set event-options policy BER_REMEDIATE then event-script ber_remediate.py arguments backup-down-min-remaining 1
+set event-options policy BER_REMEDIATE then event-script ber_remediate.py arguments min-remaining 0
+set event-options policy BER_REMEDIATE then event-script ber_remediate.py arguments ospf-instance VRF01
+set event-options policy BER_REMEDIATE then event-script ber_remediate.py user-name jcluser
+set event-options event-script file ber_monitor.py python-script-user jcluser
+set event-options event-script file ber_monitor.py checksum sha-256 <sha256 of ber_monitor.py>
+set event-options event-script file ber_remediate.py python-script-user jcluser
+set event-options event-script file ber_remediate.py checksum sha-256 <sha256 of ber_remediate.py>
